@@ -1,0 +1,6 @@
+base = datasets/ucsp
+train = datasets/ucsp/trainlist.txt
+valid = datasets/ucsp/testlist.txt
+names = data/ucsp.names
+backup = backup
+gpus  = 0
