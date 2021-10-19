@@ -1,24 +1,21 @@
-from __future__ import print_function
-import sys
 import time
+import os
+import numpy as np
+import cv2
+import argparse
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 from torchvision import datasets, transforms
-import dataset
-import random
-import math
-import os
-from opts import parse_opts
-from utils import *
-from cfg import parse_cfg
-from region_loss import RegionLoss
-from model import YOWO, get_fine_tuning_parameters
-import argparse
-import numpy as np
-import cv2
+import datasets.dataset
+from core.utils import *
+from cfg.cfg import parse_cfg
+from core.region_loss import RegionLoss
+from core.model import YOWO, get_fine_tuning_parameters
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -37,22 +34,23 @@ if __name__ == "__main__":
     parser.add_argument("--begin_epoch", type=int, default=0, help="begin_epoch")
     parser.add_argument("--end_epoch", type=int, default=4, help="evaluate")
     opt = parser.parse_args()
-    # opt = parse_opts()
-    # which dataset to use
+
+    # Dataset to use
     dataset_use = opt.dataset
-    assert dataset_use == 'ucf101-24' or dataset_use == 'jhmdb-21', 'invalid dataset'
-    # path for dataset of training and validation
+    assert dataset_use == 'ucf101-24' or dataset_use == 'uscp', 'invalid dataset'
+
+    # Dataset path of training and validation
     datacfg = opt.data_cfg
-    # path for cfg file
+    # Cfg file path
     cfgfile = opt.cfg_file
     data_options = read_data_cfg(datacfg)
     net_options = parse_cfg(cfgfile)[0]
-    # obtain list for training and testing
+    # Obtain list for training and testing
     basepath = data_options['base']
     trainlist = data_options['train']
     testlist = data_options['valid']
     backupdir = data_options['backup']
-    # number of training samples
+    # Number of training samples
     nsamples = file_lines(trainlist)
     gpus = data_options['gpus']  # e.g. 0,1,2,3
     ngpus = len(gpus.split(','))
@@ -65,7 +63,8 @@ if __name__ == "__main__":
     decay = float(net_options['decay'])
     steps = [float(step) for step in net_options['steps'].split(',')]
     scales = [float(scale) for scale in net_options['scales'].split(',')]
-    # loss parameters
+    
+    # Loss parameters
     loss_options = parse_cfg(cfgfile)[1]
     region_loss = RegionLoss()
     anchors = loss_options['anchors'].split(',')
@@ -78,8 +77,8 @@ if __name__ == "__main__":
     region_loss.class_scale = float(loss_options['class_scale'])
     region_loss.coord_scale = float(loss_options['coord_scale'])
     region_loss.batch = batch_size
+
     # Train parameters
-    max_epochs = max_batches * batch_size // nsamples + 1
     use_cuda = True
     seed = int(time.time())
     eps = 1e-5
@@ -94,21 +93,22 @@ if __name__ == "__main__":
     if use_cuda:
         os.environ['CUDA_VISIBLE_DEVICES'] = gpus
         torch.cuda.manual_seed(seed)
+    
     # Create model
     model = YOWO(opt)
     model = model.cuda()
     model = nn.DataParallel(model, device_ids=None)  # in multi-gpu case
     model.seen = 0
     # print(model)
+
     parameters = get_fine_tuning_parameters(model, opt)
     optimizer = optim.SGD(parameters, lr=learning_rate / batch_size, momentum=momentum, dampening=0,
                           weight_decay=decay * batch_size)
     kwargs = {'num_workers': num_workers, 'pin_memory': True} if use_cuda else {}
-
     print('&&&&&&&&&&&&&&&&&&& opt resume path: ', opt.resume_path)
+
     # Load resume path if necessary
     if opt.resume_path:
-        print("===================================================================")
         print('loading checkpoint {}'.format(opt.resume_path))
         checkpoint = torch.load(opt.resume_path)
         opt.begin_epoch = checkpoint['epoch']
@@ -117,12 +117,12 @@ if __name__ == "__main__":
         optimizer.load_state_dict(checkpoint['optimizer'])
         model.seen = checkpoint['epoch'] * nsamples
         print("Loaded model fscore: ", checkpoint['fscore'])
-        print("===================================================================")
+
     region_loss.seen = model.seen
-    processed_batches = model.seen // batch_size
     init_width = int(net_options['width'])
     init_height = int(net_options['height'])
-    init_epoch = model.seen // nsamples
+
+
     def adjust_learning_rate(optimizer, batch):
         lr = learning_rate
         for i in range(len(steps)):
@@ -144,7 +144,7 @@ if __name__ == "__main__":
                     return i
 
         test_loader = torch.utils.data.DataLoader(
-            dataset.listDataset(basepath, testlist, dataset_use=dataset_use, shape=(init_width, init_height),
+            datasets.dataset.listDataset(basepath, testlist, dataset_use=dataset_use, shape=(init_width, init_height),
                                 shuffle=False,
                                 transform=transforms.Compose([
                                     transforms.ToTensor()
@@ -165,12 +165,8 @@ if __name__ == "__main__":
         logging('validation at epoch %d' % (epoch))
         model.eval()
 
-
         for batch_idx, (frame_idx, data, target) in enumerate(test_loader):
-            print('*************************batch_idx: {}, frame_idx:{} , data_shape:{}'.format(batch_idx, frame_idx, data.shape)) # data.shape [1, 3, 16, 224, 224]
-            # if batch_idx == 1:
-            #     print(data[0][0][15])
-
+            print('******batch_idx: {}, frame_idx:{} , data_shape:{}'.format(batch_idx, frame_idx, data.shape))  # data.shape [1, 3, 16, 224, 224]
             if use_cuda:
                 data = data.cuda()
             with torch.no_grad():
@@ -183,40 +179,30 @@ if __name__ == "__main__":
                     # print('boxes.shape: ', np.shape(boxes))
                     
                     if dataset_use == 'ucf101-24':
-                        detection_path = os.path.join('ucf_detections', 'detections_' + str(epoch), frame_idx[i])
-                        current_dir = os.path.join('ucf_detections', 'detections_' + str(epoch))
+                        # detection_path = os.path.join('ucf_detections', 'detections_' + str(epoch), frame_idx[i])
+                        # current_dir = os.path.join('ucf_detections', 'detections_' + str(epoch))
 
                         img_path_components = frame_idx[i].split('_') 
                         sub_folder = img_path_components[1] + '_' + img_path_components[2] + '_' + img_path_components[3] + '_' + img_path_components[4]
                         img_name = str(img_path_components[5]).split('.')[0] + '.jpg'
                         img_path = "./datasets/ucf24/rgb-images/" + img_path_components[0] + '/' + sub_folder + '/' + img_name
-                        # print("image_path: ", img_path)
                         frame = cv2.imread(img_path)
 
-                        if not os.path.exists('ucf_detections'):
-                            os.mkdir(current_dir)
-                        if not os.path.exists(current_dir):
-                            os.mkdir(current_dir)
+                    for box in boxes:
+                        x1 = round(float(box[0] - box[2] / 2.0) * 320.0)
+                        y1 = round(float(box[1] - box[3] / 2.0) * 240.0)
+                        x2 = round(float(box[0] + box[2] / 2.0) * 320.0)
+                        y2 = round(float(box[1] + box[3] / 2.0) * 240.0)
+                        det_conf = float(box[4])
+                        for j in range((len(box) - 5) // 2):
+                            cls_conf = float(box[5 + 2 * j].item())
+                            if type(box[6 + 2 * j]) == torch.Tensor:
+                                cls_id = int(box[6 + 2 * j].item())
+                            else:
+                                cls_id = int(box[6 + 2 * j])
+                            prob = det_conf * cls_conf
+                        cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
 
-                    with open(detection_path, 'w+') as f_detect:
-                        for box in boxes:
-                            x1 = round(float(box[0] - box[2] / 2.0) * 320.0)
-                            y1 = round(float(box[1] - box[3] / 2.0) * 240.0)
-                            x2 = round(float(box[0] + box[2] / 2.0) * 320.0)
-                            y2 = round(float(box[1] + box[3] / 2.0) * 240.0)
-                            det_conf = float(box[4])
-                            for j in range((len(box) - 5) // 2):
-                                cls_conf = float(box[5 + 2 * j].item())
-                                if type(box[6 + 2 * j]) == torch.Tensor:
-                                    cls_id = int(box[6 + 2 * j].item())
-                                else:
-                                    cls_id = int(box[6 + 2 * j])
-                                prob = det_conf * cls_conf
-
-                                f_detect.write(
-                                    str(int(box[6]) + 1) + ' ' + str(prob) + ' ' + str(x1) + ' ' + str(y1) + ' ' + str(
-                                        x2) + ' ' + str(y2) + '\n')
-                            cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
                     cv2.imshow('frame',frame)
                     cv2.waitKey()
                     cv2.destroyAllWindows() 
@@ -245,8 +231,8 @@ if __name__ == "__main__":
                 precision = 1.0 * correct / (proposals + eps)
                 recall = 1.0 * correct / (total + eps)
                 fscore = 2.0 * precision * recall / (precision + recall + eps)
-                logging(
-                    "[%d/%d] precision: %f, recall: %f, fscore: %f" % (batch_idx, nbatch, precision, recall, fscore))
+                logging("[%d/%d] precision: %f, recall: %f, fscore: %f" % (batch_idx, nbatch, precision, recall, fscore))
+
         classification_accuracy = 1.0 * correct_classification / (total_detected + eps)
         locolization_recall = 1.0 * total_detected / (total + eps)
         print("Classification accuracy: %.3f" % classification_accuracy)

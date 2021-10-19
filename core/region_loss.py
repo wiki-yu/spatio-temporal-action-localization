@@ -3,10 +3,9 @@ import torch
 import math
 import torch.nn as nn
 from torch.autograd import Variable
-from utils import *
+from core.utils import * 
 from builtins import range as xrange
-import numpy as np
-from FocalLoss import *
+from core.FocalLoss import *
 
 # this function works for building the groud truth 
 def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW, noobject_scale, object_scale, sil_thresh, seen):
@@ -231,17 +230,17 @@ class RegionLoss(nn.Module):
         #  keep those with high box confidence scores (greater than 0.25) as our final predictions
         nProposals = int((conf > 0.25).sum().data.item())
 
-        tx    = Variable(tx.cuda())
-        ty    = Variable(ty.cuda())
-        tw    = Variable(tw.cuda())
-        th    = Variable(th.cuda())
+        tx = Variable(tx.cuda())
+        ty = Variable(ty.cuda())
+        tw = Variable(tw.cuda())
+        th = Variable(th.cuda())
         tconf = Variable(tconf.cuda())
         tcls = Variable(tcls.view(-1)[cls_mask.view(-1)].long().cuda())
 
         coord_mask = Variable(coord_mask.cuda())
-        conf_mask  = Variable(conf_mask.cuda().sqrt())
-        cls_mask   = Variable(cls_mask.view(-1, 1).repeat(1,nC).cuda())
-        cls        = cls[cls_mask].view(-1, nC)  
+        conf_mask = Variable(conf_mask.cuda().sqrt())
+        cls_mask = Variable(cls_mask.view(-1, 1).repeat(1,nC).cuda())
+        cls = cls[cls_mask].view(-1, nC)  
 
         t3 = time.time()
 

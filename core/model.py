@@ -4,8 +4,8 @@ import numpy as np
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from cfg import *
-from cfam import CFAMBlock
+from cfg.cfg import *
+from core.cfam import CFAMBlock
 from backbones_2d import darknet
 from backbones_3d import mobilenet, shufflenet, mobilenetv2, shufflenetv2, resnext, resnet
 

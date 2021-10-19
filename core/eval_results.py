@@ -1,7 +1,7 @@
 # -*- coding:utf-8 -*-
 import numpy as np
 import os
-from utils import *
+from core.utils import *
 
 def compute_score_one_class(bbox1, bbox2, w_iou=1.0, w_scores=1.0, w_scores_mul=0.5):
     # bbx: <x1> <y1> <x2> <y2> <class score>

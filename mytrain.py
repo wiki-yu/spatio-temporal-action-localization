@@ -1,46 +1,26 @@
-from __future__ import print_function
-import sys
+import os
 import time
+import argparse
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import torch.backends.cudnn as cudnn
-from torchvision import datasets, transforms
-import dataset
-import random
-import math
-import os
-from opts import parse_opts
-from utils import *
-from cfg import parse_cfg
-from region_loss import RegionLoss
-from model import YOWO, get_fine_tuning_parameters
-import argparse
-import numpy as np
-import cv2
+from torchvision import  transforms
+
+import datasets.dataset
+from core.utils import *
+from cfg.cfg import parse_cfg
+from core.region_loss import RegionLoss
+from core.model import YOWO, get_fine_tuning_parameters
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # parser.add_argument("--dataset", type=str, default="ucf101-24", help="dataset")
-    # parser.add_argument("--data_cfg", type=str, default="cfg/ucf24.data ", help="data_cfg")
-    # parser.add_argument("--cfg_file", type=str, default="cfg/ucf24.cfg ", help="cfg_file")
-    # parser.add_argument('--resume_path', default='backup/ucf24/yowo_ucf101-24_16f_best.pth', type=str, help='Continue training from pretrained (.pth)')
-    # parser.add_argument("--n_classes", type=int, default=24, help="n_classes")
-    # parser.add_argument("--backbone_3d", type=str, default="resnext101", help="backbone_3d")
-    # parser.add_argument("--backbone_3d_weights", type=str, default="weights/resnext-101-kinetics.pth", help="backbone_3d_weights")
-    # parser.add_argument("--backbone_2d", type=str, default="darknet", help="backbone_3d_weights")
-    # parser.add_argument("--backbone_2d_weights", type=str, default="weights/yolo.weights", help="backbone_2d_weights")
-    # parser.add_argument("--freeze_backbone_2d", type=bool, default=True, help="freeze_backbone_2d")
-    # parser.add_argument("--freeze_backbone_3d", type=bool, default=True, help="freeze_backbone_3d")
-    # parser.add_argument("--evaluate", type=bool, default=True, help="evaluate")
-    # parser.add_argument("--begin_epoch", type=int, default=0, help="begin_epoch")
-    # parser.add_argument("--end_epoch", type=int, default=4, help="evaluate")
-
     parser.add_argument("--dataset", type=str, default="ucsp", help="dataset")
     parser.add_argument("--data_cfg", type=str, default="cfg/ucsp.data ", help="data_cfg")
     parser.add_argument("--cfg_file", type=str, default="cfg/ucsp.cfg ", help="cfg_file")
-    parser.add_argument('--resume_path', default='backup/ucsp/yowo_ucsp_best.pth', type=str, help='Continue training from pretrained (.pth)')
+    parser.add_argument('--resume_path', default='backup/ucsp/yowo_ucsp_16f_best.pth', type=str, help='Continue training from pretrained (.pth)')
     parser.add_argument("--n_classes", type=int, default=4, help="n_classes")
     parser.add_argument("--backbone_3d", type=str, default="resnext101", help="backbone_3d")
     parser.add_argument("--backbone_3d_weights", type=str, default="weights/resnext-101-kinetics.pth", help="backbone_3d_weights")
@@ -50,28 +30,28 @@ if __name__ == "__main__":
     parser.add_argument("--freeze_backbone_3d", type=bool, default=True, help="freeze_backbone_3d")
     parser.add_argument("--evaluate", type=bool, default=False, help="evaluate")
     parser.add_argument("--begin_epoch", type=int, default=0, help="begin_epoch")
-    parser.add_argument("--end_epoch", type=int, default=4, help="end_epoch")
+    parser.add_argument("--end_epoch", type=int, default=2, help="end_epoch")
     opt = parser.parse_args()
-    # opt = parse_opts()
 
-    # which dataset to use
+    # Assert dataset to use
     dataset_use = opt.dataset
-    assert dataset_use == 'ucf101-24' or dataset_use == 'ucsp', 'invalid dataset'
+    assert dataset_use == 'ucsp', 'invalid dataset'
 
-    # path for dataset of training and validation
+    # Path for training and validation dataset configuration
     datacfg = opt.data_cfg
-    # path for cfg file
+    # Path for DL cfg file
     cfgfile = opt.cfg_file
     data_options = read_data_cfg(datacfg)
+    # print('data_options: ', data_options)
     net_options = parse_cfg(cfgfile)[0]
-    # obtain list for training and testing
+    # print('net_options: ', net_options)
+    # Obtain list for training and testing
     basepath = data_options['base']
     trainlist = data_options['train']
     testlist = data_options['valid']
     backupdir = data_options['backup']
-    print('### Basepath: {}, trainlist: {}, testlist: {}, backupdir: {}'.format(basepath, trainlist, testlist, backupdir))
 
-    # number of training samples
+    # Number of training samples
     nsamples = file_lines(trainlist)
     gpus = data_options['gpus']  # e.g. 0,1,2,3
     ngpus = len(gpus.split(','))
@@ -85,8 +65,7 @@ if __name__ == "__main__":
     steps = [float(step) for step in net_options['steps'].split(',')]
     scales = [float(scale) for scale in net_options['scales'].split(',')]
 
-    # loss parameters
-    print("##################(cfgfile)[1]: ", cfgfile)
+    # Loss parameters
     loss_options = parse_cfg(cfgfile)[1]
     region_loss = RegionLoss()
     anchors = loss_options['anchors'].split(',')
@@ -99,16 +78,24 @@ if __name__ == "__main__":
     region_loss.class_scale = float(loss_options['class_scale'])
     region_loss.coord_scale = float(loss_options['coord_scale'])
     region_loss.batch = batch_size
+    print('Region loss num_classes: {}, num_anchors: {}, anchor_step: {}, batch_size: {}'.format(
+        region_loss.num_classes, region_loss.num_anchors, region_loss.anchor_step, batch_size))
+    print('Region loss object_scale: {}, noobject_scale: {}, class_scale: {}, coord_scale: {}'.format(
+        region_loss.object_scale, region_loss.noobject_scale, region_loss.class_scale, region_loss.coord_scale))
 
     # Train parameters
     max_epochs = max_batches * batch_size // nsamples + 1
+    print('max_epochs: {}, max_batches: {}, batch_size: {},  nsamples: {}'.format(
+        max_epochs, max_batches, batch_size, nsamples))
     use_cuda = True
     seed = int(time.time())
     eps = 1e-5
     best_fscore = 0  # initialize best fscore
+
     # Test parameters
     nms_thresh = 0.4
     iou_thresh = 0.5
+
     if not os.path.exists(backupdir):
         os.mkdir(backupdir)
 
@@ -129,24 +116,20 @@ if __name__ == "__main__":
     kwargs = {'num_workers': num_workers, 'pin_memory': True} if use_cuda else {}
 
     # Load resume path if necessary
-    # if opt.resume_path:
-    #     print("===================================================================")
-    #     print('loading checkpoint {}'.format(opt.resume_path))
-    #     checkpoint = torch.load(opt.resume_path)
-    #     opt.begin_epoch = checkpoint['epoch']
-    #     best_fscore = checkpoint['fscore']
-    #     model.load_state_dict(checkpoint['state_dict'])
-    #     optimizer.load_state_dict(checkpoint['optimizer'])
-    #     model.seen = checkpoint['epoch'] * nsamples
-    #     print("Loaded model fscore: ", checkpoint['fscore'])
-    #     print("===================================================================")
-
+    if opt.resume_path:
+        print('Loading checkpoint {}'.format(opt.resume_path))
+        checkpoint = torch.load(opt.resume_path)
+        opt.begin_epoch = checkpoint['epoch']
+        best_fscore = checkpoint['fscore']
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        model.seen = checkpoint['epoch'] * nsamples
+        print("Loaded model fscore: ", checkpoint['fscore'])
 
     region_loss.seen = model.seen
     processed_batches = model.seen // batch_size
     init_width = int(net_options['width'])
     init_height = int(net_options['height'])
-    init_epoch = model.seen // nsamples
 
     def adjust_learning_rate(optimizer, batch):
         lr = learning_rate
@@ -173,8 +156,10 @@ if __name__ == "__main__":
         region_loss.l_conf.reset()
         region_loss.l_cls.reset()
         region_loss.l_total.reset()
+
+        # Prepare the training dataset
         train_loader = torch.utils.data.DataLoader(
-            dataset.listDataset(basepath, trainlist, dataset_use=dataset_use, shape=(init_width, init_height),
+            datasets.dataset.listDataset(basepath, trainlist, dataset_use=dataset_use, shape=(init_width, init_height),
                                 shuffle=True,
                                 transform=transforms.Compose([
                                     transforms.ToTensor(),
@@ -188,6 +173,7 @@ if __name__ == "__main__":
         lr = adjust_learning_rate(optimizer, processed_batches)
         logging('training at epoch %d, lr %f' % (epoch, lr))
         model.train()
+
         for batch_idx, (data, target) in enumerate(train_loader):
             adjust_learning_rate(optimizer, processed_batches)
             processed_batches = processed_batches + 1
@@ -211,6 +197,7 @@ if __name__ == "__main__":
         t1 = time.time()
         logging('trained with %f samples/s' % (len(train_loader.dataset) / (t1 - t0)))
         print('')
+
     def test(epoch):
         def truths_length(truths):
             for i in range(50):
@@ -218,7 +205,7 @@ if __name__ == "__main__":
                     return i
 
         test_loader = torch.utils.data.DataLoader(
-            dataset.listDataset(basepath, testlist, dataset_use=dataset_use, shape=(init_width, init_height),
+            datasets.dataset.listDataset(basepath, testlist, dataset_use=dataset_use, shape=(init_width, init_height),
                                 shuffle=False,
                                 transform=transforms.Compose([
                                     transforms.ToTensor()
@@ -247,24 +234,7 @@ if __name__ == "__main__":
                 for i in range(output.size(0)):
                     boxes = all_boxes[i]
                     boxes = nms(boxes, nms_thresh)
-                    # if dataset_use == 'ucf101-24':
-                    #     detection_path = os.path.join('ucf_detections', 'detections_' + str(epoch), frame_idx[i])
-                    #     current_dir = os.path.join('ucf_detections', 'detections_' + str(epoch))
-                    #     if not os.path.exists('ucf_detections'):
-                    #         os.mkdir(current_dir)
-                    #     if not os.path.exists(current_dir):
-                    #         os.mkdir(current_dir)
-                    # else:
-                        # detection_path = os.path.join('ucsp_detections', 'detections_' + str(epoch), frame_idx[i])
-                        # current_dir = os.path.join('ucsp_detections', 'detections_' + str(epoch))
-                        # print('################## current_dir: ', current_dir)
-                        # if not os.path.exists('ucsp_detections'):
-                        #     print('111111111111111111111111')
-                        #     os.mkdir('ucf_detections')
-                        # if not os.path.exists(current_dir):
-                        #     print('2222222222222222222')
-                        #     os.mkdir(current_dir)
-                    # with open(detection_path, 'w+') as f_detect:
+ 
                     for box in boxes:
                         x1 = round(float(box[0] - box[2] / 2.0) * 320.0)
                         y1 = round(float(box[1] - box[3] / 2.0) * 240.0)
@@ -280,9 +250,6 @@ if __name__ == "__main__":
                                 cls_id = int(box[6 + 2 * j])
                             prob = det_conf * cls_conf
 
-                                # f_detect.write(
-                                #     str(int(box[6]) + 1) + ' ' + str(prob) + ' ' + str(x1) + ' ' + str(y1) + ' ' + str(
-                                #         x2) + ' ' + str(y2) + '\n')
                     truths = target[i].view(-1, 5)
                     num_gts = truths_length(truths)
                     total = total + num_gts
@@ -316,21 +283,22 @@ if __name__ == "__main__":
         print("Locolization recall: %.3f" % locolization_recall)
         return fscore
     
-    
     if opt.evaluate:
         logging('evaluating ...')
         test(0)
     else:
+        print('###begin_epoch: {}, end_epoch: {}'.format(opt.begin_epoch, opt.end_epoch))
         for epoch in range(opt.begin_epoch, opt.end_epoch + 1):
             # Train the model for 1 epoch
             train(epoch)
             # Validate the model
             fscore = test(epoch)
+            print('Current best fscore: {}, fscore now: {}'.format(best_fscore, fscore))
             is_best = fscore > best_fscore
             if is_best:
                 print("New best fscore is achieved: ", fscore)
-                print("Previous fscore was: ", best_fscore)
                 best_fscore = fscore
+
             # Save the model to backup directory
             state = {
                 'epoch': epoch,
@@ -339,4 +307,4 @@ if __name__ == "__main__":
                 'fscore': fscore
             }
             save_checkpoint(state, is_best, backupdir, opt.dataset, clip_duration)
-            logging('Weights are saved to backup directory: %s' % (backupdir))
+            logging('!!!Weights are saved to backup directory: %s' % (backupdir))

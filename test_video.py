@@ -8,10 +8,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from utils import *
-from cfg import parse_cfg
-from region_loss import RegionLoss
-from model import YOWO, get_fine_tuning_parameters
+from core.utils import *
+from cfg.cfg import parse_cfg
+from core.region_loss import RegionLoss
+from core.model import YOWO, get_fine_tuning_parameters
 from datasets import cv2_transform
 
 
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="ucsp", help="dataset")
     parser.add_argument("--data_cfg", type=str, default="cfg/ucsp.data ", help="data_cfg")
     parser.add_argument("--cfg_file", type=str, default="cfg/ucsp.cfg ", help="cfg_file")
-    parser.add_argument('--resume_path', default='backup/ucsp/yowo_ucsp_16f_checkpoint.pth', type=str, help='Continue training from pretrained (.pth)')
+    parser.add_argument('--resume_path', default='backup/ucsp/yowo_ucsp_16f_best.pth', type=str, help='Continue training from pretrained (.pth)')
     parser.add_argument("--n_classes", type=int, default=4, help="n_classes")
     parser.add_argument("--backbone_3d", type=str, default="resnext101", help="backbone_3d")
     parser.add_argument("--backbone_3d_weights", type=str, default="weights/resnext-101-kinetics.pth", help="backbone_3d_weights")
@@ -155,6 +155,7 @@ if __name__ == "__main__":
 
         # Data preparation and inference 
         video_path = 'datasets/twoperson.mp4'
+        # video_path = 'datasets/skating.mp4'
         cap = cv2.VideoCapture(video_path)
         count = 0
         queue = []

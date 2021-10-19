@@ -9,7 +9,6 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from collections import OrderedDict
 from torch.nn import init
-import math
 
 
 def conv_bn(inp, oup, stride):

@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-import math
 from functools import partial
 
 __all__ = ['ResNeXt', 'resnet50', 'resnet101']
