@@ -155,7 +155,7 @@ if __name__ == "__main__":
         model.eval()
 
         # Data preparation and inference 
-        video_path = 'datasets/UCSP_fill_1_cut_compressed_mod.mp4'
+        video_path = 'datasets/test.mp4'
         # video_path = 'datasets/skating.mp4'
         cap = cv2.VideoCapture(video_path)
         count = 0
@@ -167,8 +167,6 @@ if __name__ == "__main__":
 
             if not ret:
                 break
-            frame = cv2.resize(frame, (320, 240), interpolation = cv2.INTER_AREA)
-            print('*****************************frame shape: ', np.shape(frame))
             if len(queue) <= 0: 
                 for i in range(clip_duration):
                     queue.append(frame)
@@ -204,12 +202,14 @@ if __name__ == "__main__":
                 preds = []
                 # print('### model output shape: ', output.shape)  # [1, 425, 7, 7]
                 all_boxes = get_region_boxes(output, conf_thresh_valid, num_classes, anchors, num_anchors, 0, 1)
+                print('all_boxes shape1111111111111111111111: ', np.shape(all_boxes))
 
                 # print('output.size(0): {} output.shape: {} '.format(output.size(0), output.shape))  # output.size(0): 1 output.shape: torch.Size([1, 145, 7, 7])
                 for i in range(output.size(0)):
                     boxes = all_boxes[i]
+                    print('boxes1.shape: ', np.shape(boxes))
                     boxes = nms(boxes, nms_thresh)
-                    print('boxes.shape: ', np.shape(boxes))
+                    print('boxes2.shape: ', np.shape(boxes))
                     for box in boxes:
                         x1 = round(float(box[0] - box[2] / 2.0) * 320.0)
                         y1 = round(float(box[1] - box[3] / 2.0) * 240.0)
@@ -217,43 +217,45 @@ if __name__ == "__main__":
                         y2 = round(float(box[1] + box[3] / 2.0) * 240.0)
 
                         det_conf = float(box[4])    
-                        for j in range((len(box) - 5) // 2):
-                            cls_conf = float(box[5 + 2 * j].item())
+                        print('box: ', box)
+                        # print('box[5]: ', box[5])
+            #             for j in range((len(box) - 5) // 2):
+            #                 cls_conf = float(box[5 + 2 * j].item())
 
-                            if type(box[6 + 2 * j]) == torch.Tensor:
-                                cls_id = int(box[6 + 2 * j].item())
-                            else:
-                                cls_id = int(box[6 + 2 * j])
-                            prob = det_conf * cls_conf
+            #                 if type(box[6 + 2 * j]) == torch.Tensor:
+            #                     cls_id = int(box[6 + 2 * j].item())
+            #                 else:
+            #                     cls_id = int(box[6 + 2 * j])
+            #                 prob = det_conf * cls_conf
 
-                            # print(
-                            #     str(int(box[6]) + 1) + ' ' + str(prob) + ' ' + str(x1) + ' ' + str(y1) + ' ' + str(
-                            #         x2) + ' ' + str(y2) + '\n')
+            #                 # print(
+            #                 #     str(int(box[6]) + 1) + ' ' + str(prob) + ' ' + str(x1) + ' ' + str(y1) + ' ' + str(
+            #                 #         x2) + ' ' + str(y2) + '\n')
                             
-                            preds.append([[x1,y1,x2,y2], prob, cls_id])
-            for dets in preds:
-                x1 = int(dets[0][0])
-                y1 = int(dets[0][1])
-                x2 = int(dets[0][2])
-                y2 = int(dets[0][3])
-                cls_score = np.array(dets[1])
-                cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
-                blk   = np.zeros(frame.shape, np.uint8)
-                font  = cv2.FONT_HERSHEY_SIMPLEX
-                coord = []
-                text  = []
-                text_size = []
-                text.append("[{:.2f}] ".format(cls_score)+str(dets[2]))
-                text_size.append(cv2.getTextSize(text[-1], font, fontScale=0.25, thickness=1)[0])
-                coord.append((x1+3, y1+7+10))
-                cv2.rectangle(blk, (coord[-1][0]-1, coord[-1][1]-6), (coord[-1][0]+text_size[-1][0]+1, coord[-1][1]+text_size[-1][1]-4), (0, 255, 0), cv2.FILLED)
-                frame = cv2.addWeighted(frame, 1.0, blk, 0.25, 1)
-                for t in range(len(text)):
-                    cv2.putText(frame, text[t], coord[t], font, 0.25, (0, 0, 0), 1)
+            #                 preds.append([[x1,y1,x2,y2], prob])
+            # for dets in preds:
+            #     x1 = int(dets[0][0])
+            #     y1 = int(dets[0][1])
+            #     x2 = int(dets[0][2])
+            #     y2 = int(dets[0][3])
+            #     cls_score = np.array(dets[1])
+            #     cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
+            #     blk   = np.zeros(frame.shape, np.uint8)
+            #     font  = cv2.FONT_HERSHEY_SIMPLEX
+            #     coord = []
+            #     text  = []
+            #     text_size = []
+            #     text.append("[{:.2f}] ".format(cls_score))
+            #     text_size.append(cv2.getTextSize(text[-1], font, fontScale=0.25, thickness=1)[0])
+            #     coord.append((x1+3, y1+7+10))
+            #     cv2.rectangle(blk, (coord[-1][0]-1, coord[-1][1]-6), (coord[-1][0]+text_size[-1][0]+1, coord[-1][1]+text_size[-1][1]-4), (0, 255, 0), cv2.FILLED)
+            #     frame = cv2.addWeighted(frame, 1.0, blk, 0.25, 1)
+            #     for t in range(len(text)):
+            #         cv2.putText(frame, text[t], coord[t], font, 0.25, (0, 0, 0), 1)
                             
-            cv2.imshow('frame',frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+            # cv2.imshow('frame',frame)
+            # if cv2.waitKey(1) & 0xFF == ord('q'):
+            #     break
         cap.release()
         cv2.destroyAllWindows()
 
